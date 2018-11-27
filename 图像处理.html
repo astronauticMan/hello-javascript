@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>图像处理</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- <link rel="stylesheet" type="text/css" media="screen" href="main.css" /> -->
+    <!-- <script src="main.js"></script> -->
+</head>
+<body>
+    <div>
+        <input type="radio" id="type1" name="type" value="file"><label for="type1">使用图片（含透明背景PNG或JPEG或GIF）</label>
+        <p><input type="file" id="file" accept="image/png,image/jpeg,image/gif"></p>
+    </div>
+    <div>
+        <button onclick="toGray()">灰度</button>
+        <button onclick="toInverse()">反色</button>
+        <button onclick="toGaussBlur()">高斯模糊</button>
+        <button onclick="toSketch()">淡化</button>
+        <button onclick="toAncient()">复古</button>
+        <button onclick="toLight()">亮度</button>
+        <button onclick="toDark()">暗度</button>
+        <button onclick="toFade()">透明</button>
+        <button onclick="toRed()">红色蒙版</button>
+        <button onclick="toGreen()">绿色蒙版</button>
+        <button onclick="toBlue()">蓝色蒙版</button>
+        <button onclick="toOTSU()">二值化（黑白）</button>
+        <button onclick="toSketch2()">素描</button>
+        <p>精度：（越高模糊越深，素描效果越好，渲染时间越久，推荐5-20）</p><input type="number" id="points_precison" min="5" max="100" step="1" value="5" />
+        <p>亮度：（亮度效果强弱）</p><input type="number" id="points_light" min="0" max="255" step="1" value="30" />
+        <p>暗度：（暗度效果强弱）</p><input type="number" id="points_dark" min="0" max="255" step="1" value="30" />
+        <p>透明度：（透明效果强弱）</p><input type="number" id="points_opacity" min="0" max="1" step="0.1" value="0.5" />
+    </div>
+    <div>
+        <button onclick="restoreImg()">还原</button>
+        <button onclick="exportImg()">导出图片</button>
+    </div>
+    <canvas id="cav" width="720" height="720"></canvas>
+    <img id="image" src="">
+    <script>
+        var canvas = document.getElementById("cav");
+        var context = canvas.getContext("2d");
+        var width = canvas.width;
+        var height = canvas.height;
+        var eFile = document.getElementById("file");
+        var reader = new FileReader();
+        var img = new Image();
+        var file = null;
+        var oriImgData,curGrayData,curW,curH;
+        reader.onload = function(e){
+            img.src = e.target.result;
+        }
+        eFile.addEventListener("change",function(e){
+            file = e.target.files[0];
+            if(file&&file.type.indexOf('image')==0){
+                reader.readAsDataURL(file);
+            }
+        })
+        img.onload = function(){
+            var oriW = this.width;
+            var oriH = this.height;
+            var tarW,tarH;
+            if(oriW>oriH){
+                tarW = width;
+                tarH = height*(oriH/oriW);
+            }else{
+                tarH = height;
+                tarW = width*(oriW/oriH);
+            }
+            curW = tarW;
+            curH = tarH;
+            // 清除画布
+		    context.clearRect(0, 0, width, height);
+            // 图片压缩
+            var x = (width - tarW) / 2;
+            var y = (height - tarH) / 2;
+		    context.drawImage(img, x, y, tarW, tarH);
+		    oriImgData = getImgData().data.slice(0);
+        }
+        function getImgData(){
+            return context.getImageData(0,0,width,height);
+        }
+        function toGray(){
+            var imgData = getImgData();           
+            for(var i = 0;i<imgData.data.length;i+=4){
+                var r = imgData.data[i];
+                var g = imgData.data[i+1];
+                var b = imgData.data[i+2];
+                var gray = getGrayValue(r,g,b);
+                imgData.data[i] = gray;
+                imgData.data[i+1] = gray;
+                imgData.data[i+2] = gray;
+            }
+            curGrayData = imgData.data.slice(0);
+            context.putImageData(imgData,0,0);
+        }
+        function getGrayValue(r,g,b){
+            return parseInt(r * 0.299 + g * 0.587 + b * 0.114);
+        }
+        function toInverse(){
+            var imgData = getImgData();
+            for(var i = 0;i<imgData.data.length;i+=4){
+                var r = imgData.data[i];
+                var g = imgData.data[i+1];
+                var b = imgData.data[i+2];
+                imgData.data[i] = 255 - r;
+                imgData.data[i+1] = 255 - g;
+                imgData.data[i+2] = 255 - b;
+            }
+            context.putImageData(imgData,0,0);
+        }
+        function toGaussBlur(){
+            var value = Math.floor(document.getElementById("points_precison").value);
+            var imgData = gaussBlur(getImgData(),value);
+            context.putImageData(imgData,0,0);
+        }
+
+        function gaussBlur(imgData, radius, sigma) {
+            var pixes = imgData.data,
+                width = imgData.width,
+                height = imgData.height;
+
+            radius = radius || 5;
+            sigma = sigma || radius / 3;
+
+            var gaussEdge = radius * 2 + 1;    // 高斯矩阵的边长
+
+            var gaussMatrix = [],
+                gaussSum = 0,
+                a = 1 / (2 * sigma * sigma * Math.PI),
+                b = -a * Math.PI;
+
+            for (var i=-radius; i<=radius; i++) {
+                for (var j=-radius; j<=radius; j++) {
+                    var gxy = a * Math.exp((i * i + j * j) * b);
+                    gaussMatrix.push(gxy);
+                    gaussSum += gxy;    // 得到高斯矩阵的和，用来归一化
+                }
+            }
+            var gaussNum = (radius + 1) * (radius + 1);
+            for (var i=0; i<gaussNum; i++) {
+                gaussMatrix[i] = gaussMatrix[i] / gaussSum;    // 除gaussSum是归一化
+            }
+
+            //console.log(gaussMatrix);
+
+            // 循环计算整个图像每个像素高斯处理之后的值
+            for (var x=0; x<width;x++) {
+                for (var y=0; y<height; y++) {
+                    var r = 0,
+                        g = 0,
+                        b = 0;
+
+                    //console.log(1);
+
+                    // 计算每个点的高斯处理之后的值
+                    for (var i=-radius; i<=radius; i++) {
+                        // 处理边缘
+                        var m = handleEdge(i, x, width);
+                        for (var j=-radius; j<=radius; j++) {
+                            // 处理边缘
+                            var mm = handleEdge(j, y, height);
+
+                            var currentPixId = (mm * width + m) * 4;
+
+                            var jj = j + radius;
+                            var ii = i + radius;
+                            
+                            r += pixes[currentPixId] * gaussMatrix[jj * gaussEdge + ii];
+                            g += pixes[currentPixId + 1] * gaussMatrix[jj * gaussEdge + ii];
+                            b += pixes[currentPixId + 2] * gaussMatrix[jj * gaussEdge + ii];    
+
+                        }
+                    }
+                    var pixId = (y * width + x) * 4;
+
+                    pixes[pixId] = ~~r;
+                    pixes[pixId + 1] = ~~g;
+                    pixes[pixId + 2] = ~~b;
+                }
+            }
+            imgData.data = pixes;
+            return imgData;
+        }
+        function handleEdge(i, x, w) {
+            var  m = x + i;
+            if (m < 0) {
+                m = -m;
+            } else if (m >= w) {
+                m = w + i - x;
+            }
+            return m;
+        }
+        function toSketch(){
+            var imgData = getImgData();
+            for(var i = 0;i<imgData.data.length;i+=4){
+                var r = imgData.data[i];
+                var g = imgData.data[i+1];
+                var b = imgData.data[i+2];
+                if(!curGrayData){
+                    alert("请先灰度");
+                    return;
+                }
+                var gray = curGrayData[i];
+                //sketch = MIN( ( gray + (gray * guassian) / (255-guassian)),255 );
+                imgData.data[i] =  Math.min((gray + (gray * r) / (255-r)),255);
+                imgData.data[i+1] = Math.min((gray + (gray * g) / (255-g)),255);
+                imgData.data[i+2] = Math.min((gray + (gray * b) / (255-b)),255);
+            }
+            context.putImageData(imgData,0,0);
+        }
+        function toAncient(){
+            var imgData = getImgData();
+            for(var i = 0;i<imgData.data.length;i+=4){
+                var r = imgData.data[i];
+                var g = imgData.data[i+1];
+                var b = imgData.data[i+2];
+                imgData.data[i] = r * 0.3 + g * 0.4 + b * 0.3;
+                imgData.data[i+1] = r * 0.2 + g * 0.6 + b * 0.2;
+                imgData.data[i+2] = r * 0.4 + g * 0.3 + b * 0.3;
+            }
+            context.putImageData(imgData,0,0);
+        }
+        function toLight(){
+            var imgData = getImgData();
+            var value = Math.floor(document.getElementById("points_light").value);
+            for(var i = 0;i<imgData.data.length;i+=4){
+                var r = imgData.data[i];
+                var g = imgData.data[i+1];
+                var b = imgData.data[i+2];
+                imgData.data[i] = r + value;
+                imgData.data[i+1] = g + value;
+                imgData.data[i+2] = b + value;
+            }
+            context.putImageData(imgData,0,0);
+        }
+        function toDark(){
+            var imgData = getImgData();
+            var value = Math.floor(document.getElementById("points_dark").value);
+            for(var i = 0;i<imgData.data.length;i+=4){
+                var r = imgData.data[i];
+                var g = imgData.data[i+1];
+                var b = imgData.data[i+2];
+                imgData.data[i] = r - value;
+                imgData.data[i+1] = g - value;
+                imgData.data[i+2] = b - value;
+            }
+            context.putImageData(imgData,0,0);
+        }
+        function toFade(){
+            var imgData = getImgData();
+            var value = parseFloat(document.getElementById("points_opacity").value);
+            for(var i = 0;i<imgData.data.length;i+=4){
+                imgData.data[i+3] *= value;
+            }
+            context.putImageData(imgData,0,0);
+        }
+        function toRed(){
+            var imgData = getImgData();
+            for(var i = 0;i<imgData.data.length;i+=4){
+                var r = imgData.data[i];
+                var g = imgData.data[i+1];
+                var b = imgData.data[i+2];
+                imgData.data[i] = Math.floor((r+g+b)/3);
+                imgData.data[i+1] = 0;
+                imgData.data[i+2] = 0;
+            }
+            context.putImageData(imgData,0,0);
+        }
+        function toGreen(){
+            var imgData = getImgData();
+            for(var i = 0;i<imgData.data.length;i+=4){
+                var r = imgData.data[i];
+                var g = imgData.data[i+1];
+                var b = imgData.data[i+2];
+                imgData.data[i] = 0;
+                imgData.data[i+1] = Math.floor((r+g+b)/3);
+                imgData.data[i+2] = 0;
+            }
+            context.putImageData(imgData,0,0);
+        }
+        function toBlue(){
+            var imgData = getImgData();
+            for(var i = 0;i<imgData.data.length;i+=4){
+                var r = imgData.data[i];
+                var g = imgData.data[i+1];
+                var b = imgData.data[i+2];
+                imgData.data[i] = 0;
+                imgData.data[i+1] = 0;
+                imgData.data[i+2] = Math.floor((r+g+b)/3);
+            }
+            context.putImageData(imgData,0,0);
+        }
+        function toOTSU(){
+            //灰度
+            toGray();
+            var m_pFstdHistogram = new Array();//表示灰度值的分布点概率
+            var m_pFGrayAccu = new Array();//其中每一个值等于m_pFstdHistogram中从0到当前下标值的和
+            var m_pFGrayAve = new Array();//其中每一值等于m_pFstdHistogram中从0到当前指定下标值*对应的下标之和
+            var m_pAverage=0;//值为m_pFstdHistogram【256】中每一点的分布概率*当前下标之和
+            var m_pHistogram = new Array();//灰度直方图
+            var i,j;
+            var temp=0,fMax=0;//定义一个临时变量和一个最大类间方差的值
+            var nThresh = 0;//最优阀值
+            //初始化各项参数
+            for(i=0; i<256; i++){
+                m_pFstdHistogram[i] = 0;
+                m_pFGrayAccu[i] = 0;
+                m_pFGrayAve[i] = 0;
+                m_pHistogram[i] = 0;
+            }
+            //获取图像信息
+            var canvasData = getImgData();
+            //获取图像的像素
+            var pixels = canvasData.data;
+            //下面统计图像的灰度分布信息
+            for(i=0; i<pixels.length; i+=4){
+                //获取r的像素值，因为灰度图像，r=g=b，所以取第一个即可
+                var r = pixels[i];
+                m_pHistogram[r]++;
+            }
+            //下面计算每一个灰度点在图像中出现的概率
+            var size = canvasData.width * canvasData.height;
+            for(i=0; i<256; i++){
+                m_pFstdHistogram[i] = m_pHistogram[i] / size;
+            }
+            //下面开始计算m_pFGrayAccu和m_pFGrayAve和m_pAverage的值
+            for(i=0; i<256; i++){
+                for(j=0; j<=i; j++){
+                    //计算m_pFGaryAccu[256]
+                    m_pFGrayAccu[i] += m_pFstdHistogram[j];
+                    //计算m_pFGrayAve[256]
+                    m_pFGrayAve[i] += j * m_pFstdHistogram[j];
+                }
+                //计算平均值
+                m_pAverage += i * m_pFstdHistogram[i];
+            }
+            //下面开始就算OSTU的值，从0-255个值中分别计算ostu并寻找出最大值作为分割阀值
+            for (i = 0 ; i < 256 ; i++){
+                    temp = (m_pAverage * m_pFGrayAccu[i] - m_pFGrayAve[i]) 
+                        * (m_pAverage * m_pFGrayAccu[i] - m_pFGrayAve[i]) 
+                        / (m_pFGrayAccu[i] * (1 - m_pFGrayAccu[i]));
+                    if (temp > fMax)
+                    {
+                        fMax = temp;
+                        nThresh = i;
+                    }
+                }
+            //下面执行二值化过程 
+            for(i=0; i<canvasData.width; i++){
+                for(j=0; j<canvasData.height; j++){
+                    //取得每一点的位置
+                    var ids = (i + j*canvasData.width)*4;
+                    //取得像素的R分量的值
+                    var r = canvasData.data[ids];
+                    //与阀值进行比较，如果小于阀值，那么将改点置为0，否则置为255
+                    var gray = r>nThresh?255:0;
+                    canvasData.data[ids+0] = gray;
+                    canvasData.data[ids+1] = gray;
+                    canvasData.data[ids+2] = gray;
+                }
+            }
+            //显示二值化图像
+            context.putImageData(canvasData,0,0);
+        }
+        function toSketch2(){
+            toGray();
+            toInverse();
+            toGaussBlur();
+            toSketch();
+        }
+        function restoreImg(){
+            if(!oriImgData)return;
+            var imgData = getImgData();
+            for(var i = 0;i<imgData.data.length;i+=4){
+                imgData.data[i] =  oriImgData[i];
+                imgData.data[i+1] = oriImgData[i+1];
+                imgData.data[i+2] = oriImgData[i+2];
+                imgData.data[i+3] = oriImgData[i+3];
+            }
+            context.putImageData(imgData,0,0);
+        }
+        function exportImg(){
+            if(!file)return;
+            var canvas2 = document.createElement('canvas');
+            canvas2.width = curW;
+            canvas2.height = curH;
+            var context2 = canvas2.getContext("2d");
+            var x = (width - curW) / 2;
+            var y = (height - curH) / 2;
+            context2.drawImage(canvas,x,y,curW,curH,0,0,curW,curH);
+            var img = document.getElementById("image");
+            img.src = canvas2.toDataURL(file.type);
+        }
+    </script>
+</body>
+</html>
